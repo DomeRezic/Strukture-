@@ -10,22 +10,29 @@ typedef struct {
 } Term;
 
 // Function declarations
-int read_polynomial(const char *filename, Term poly[], int *n);
-int add_polynomials(Term poly1[], int n1, Term poly2[], int n2, Term result[], int *n3);
-int multiply_polynomials(Term poly1[], int n1, Term poly2[], int n2, Term result[], int *n3);
-void print_polynomial(Term poly[], int n);
-void sort_polynomial(Term poly[], int *n);
+int read_polynomial(const char *filename, Term **poly, int *n);
+int add_polynomials(Term *poly1, int n1, Term *poly2, int n2, Term **result, int *n3);
+int multiply_polynomials(Term *poly1, int n1, Term *poly2, int n2, Term **result, int *n3);
+int print_polynomial(Term *poly, int n);
+int sort_polynomial(Term *poly, int n);
+
+// Helper for quicksort
+int compare(const void *a, const void *b) {
+    Term *t1 = (Term *)a;
+    Term *t2 = (Term *)b;
+    return t2->exp - t1->exp; // Descending order by exponent
+}
 
 int main() {
-    Term poly1[MAX_TERMS], poly2[MAX_TERMS];
-    Term sum[MAX_TERMS*2], product[MAX_TERMS*2];
+    Term *poly1 = NULL, *poly2 = NULL;
+    Term *sum = NULL, *product = NULL;
     int n1, n2, nsum, nproduct;
 
-    if (read_polynomial("poly1.txt", poly1, &n1) == -1) return -1;
-    if (read_polynomial("poly2.txt", poly2, &n2) == -1) return -1;
+    if (read_polynomial("poly1.txt", &poly1, &n1) == -1) return -1;
+    if (read_polynomial("poly2.txt", &poly2, &n2) == -1) return -1;
 
-    if (add_polynomials(poly1, n1, poly2, n2, sum, &nsum) == -1) return -1;
-    if (multiply_polynomials(poly1, n1, poly2, n2, product, &nproduct) == -1) return -1;
+    if (add_polynomials(poly1, n1, poly2, n2, &sum, &nsum) == -1) return -1;
+    if (multiply_polynomials(poly1, n1, poly2, n2, &product, &nproduct) == -1) return -1;
 
     printf("Polynomial 1: ");
     print_polynomial(poly1, n1);
@@ -39,88 +46,110 @@ int main() {
     printf("Product: ");
     print_polynomial(product, nproduct);
 
+    // Free dynamically allocated memory
+    free(poly1);
+    free(poly2);
+    free(sum);
+    free(product);
+
     return 0;
 }
 
 // Function definitions
 
-int read_polynomial(const char *filename, Term poly[], int *n) {
+int read_polynomial(const char *filename, Term **poly, int *n) {
     FILE *fp = fopen(filename, "r");
     if (!fp) return -1;
 
+    *poly = (Term *)malloc(MAX_TERMS * sizeof(Term));
+    if (!*poly) {
+        fclose(fp);
+        return -1;
+    }
+
     int count = 0;
-    while (fscanf(fp, "%d %d", &poly[count].coeff, &poly[count].exp) == 2) {
+    while (fscanf(fp, "%d %d", &(*poly)[count].coeff, &(*poly)[count].exp) == 2) {
         count++;
         if (count >= MAX_TERMS) break;
     }
     fclose(fp);
     *n = count;
+
+    if (sort_polynomial(*poly, *n) == -1) return -1; // Sort after reading
+
     return 0;
 }
 
-void sort_polynomial(Term poly[], int *n) {
-    // Simple bubble sort by exponent descending
-    for (int i = 0; i < *n - 1; i++) {
-        for (int j = 0; j < *n - i - 1; j++) {
-            if (poly[j].exp < poly[j+1].exp) {
-                Term temp = poly[j];
-                poly[j] = poly[j+1];
-                poly[j+1] = temp;
-            }
-        }
-    }
+int sort_polynomial(Term *poly, int n) {
+    if (!poly || n <= 0) return -1;
+    qsort(poly, n, sizeof(Term), compare);
+    return 0;
 }
 
-int add_polynomials(Term poly1[], int n1, Term poly2[], int n2, Term result[], int *n3) {
+int add_polynomials(Term *poly1, int n1, Term *poly2, int n2, Term **result, int *n3) {
+    if (!poly1 || !poly2) return -1;
+
+    *result = (Term *)malloc((n1 + n2) * sizeof(Term));
+    if (!*result) return -1;
+
     int i = 0, j = 0, k = 0;
     while (i < n1 && j < n2) {
         if (poly1[i].exp > poly2[j].exp) {
-            result[k++] = poly1[i++];
+            (*result)[k++] = poly1[i++];
         } else if (poly1[i].exp < poly2[j].exp) {
-            result[k++] = poly2[j++];
+            (*result)[k++] = poly2[j++];
         } else {
-            result[k].exp = poly1[i].exp;
-            result[k].coeff = poly1[i].coeff + poly2[j].coeff;
-            if (result[k].coeff != 0) k++;
+            int sum_coeff = poly1[i].coeff + poly2[j].coeff;
+            if (sum_coeff != 0) {
+                (*result)[k].exp = poly1[i].exp;
+                (*result)[k].coeff = sum_coeff;
+                k++;
+            }
             i++;
             j++;
         }
     }
-    while (i < n1) result[k++] = poly1[i++];
-    while (j < n2) result[k++] = poly2[j++];
+    while (i < n1) (*result)[k++] = poly1[i++];
+    while (j < n2) (*result)[k++] = poly2[j++];
+
     *n3 = k;
-    return 0;
+    return sort_polynomial(*result, *n3);
 }
 
-int multiply_polynomials(Term poly1[], int n1, Term poly2[], int n2, Term result[], int *n3) {
+int multiply_polynomials(Term *poly1, int n1, Term *poly2, int n2, Term **result, int *n3) {
+    if (!poly1 || !poly2) return -1;
+
+    *result = (Term *)calloc(MAX_TERMS * 2, sizeof(Term));
+    if (!*result) return -1;
+
     int k = 0;
     for (int i = 0; i < n1; i++) {
         for (int j = 0; j < n2; j++) {
             int exp = poly1[i].exp + poly2[j].exp;
             int coeff = poly1[i].coeff * poly2[j].coeff;
-            // Check if term with same exponent already exists
+
             int found = 0;
             for (int m = 0; m < k; m++) {
-                if (result[m].exp == exp) {
-                    result[m].coeff += coeff;
+                if ((*result)[m].exp == exp) {
+                    (*result)[m].coeff += coeff;
                     found = 1;
                     break;
                 }
             }
             if (!found) {
-                if (k >= MAX_TERMS*2) return -1; // overflow
-                result[k].exp = exp;
-                result[k].coeff = coeff;
+                (*result)[k].exp = exp;
+                (*result)[k].coeff = coeff;
                 k++;
             }
         }
     }
     *n3 = k;
-    sort_polynomial(result, n3);
-    return 0;
+    return sort_polynomial(*result, *n3);
 }
 
-void print_polynomial(Term poly[], int n) {
+int print_polynomial(Term *poly, int n) {
+    if (!poly || n <= 0) return -1;
+
     for (int i = 0; i < n; i++) {
         if (i > 0 && poly[i].coeff > 0) printf(" + ");
         else if (poly[i].coeff < 0) printf(" - ");
@@ -132,4 +161,6 @@ void print_polynomial(Term poly[], int n) {
         else printf("%dx^%d", abs_coeff, poly[i].exp);
     }
     printf("\n");
+    return 0;
 }
+
